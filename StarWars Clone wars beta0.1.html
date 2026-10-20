@@ -1,0 +1,1680 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Star Wars: Battlefront Web Edition</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    overflow: hidden; background: #050508; color: #fff;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    user-select: none; -webkit-user-select: none;
+  }
+  #canvas-host { position: fixed; inset: 0; z-index: 1; }
+  #canvas-host canvas { display: block; }
+  .hidden { display: none !important; }
+
+  /* ---- crosshair ---- */
+  #crosshair {
+    position: fixed; left: 50%; top: 50%; width: 12px; height: 12px;
+    border: 2px solid #00ecff; border-radius: 50%;
+    transform: translate(-50%,-50%);
+    box-shadow: 0 0 10px rgba(0,236,255,.6);
+    z-index: 10; pointer-events: none; transition: all .1s;
+  }
+  #crosshair.hit {
+    border-color: #ff4444;
+    box-shadow: 0 0 18px rgba(255,68,68,.9);
+    transform: translate(-50%,-50%) scale(1.6);
+  }
+
+  /* ---- damage vignette ---- */
+  #vignette {
+    position: fixed; inset: 0; z-index: 9; pointer-events: none;
+    box-shadow: inset 0 0 140px 40px rgba(255,30,30,.55);
+  }
+
+  /* ---- HUD ---- */
+  #hud {
+    position: fixed; left: 24px; bottom: 24px; z-index: 10; pointer-events: none;
+    color: #00ecff; text-shadow: 0 0 10px rgba(0,236,255,.6); line-height: 1.25;
+  }
+  #ammo-line { font-size: 20px; font-weight: 700; letter-spacing: .5px; }
+  #ammo-line.reloading, #ammo-line.reloading #ammo-val { color: #fbbf24; text-shadow: 0 0 10px rgba(251,191,36,.5); }
+  .hp-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; font-weight: 600; }
+  .hp-track { width: 176px; height: 10px; border-radius: 999px; background: rgba(255,255,255,.1); overflow: hidden; }
+  #hp-fill { height: 100%; width: 100%; border-radius: 999px; background: #34d399; transition: all .2s; }
+  #frags-line { margin-top: 6px; font-size: 16px; font-weight: 700; }
+  #army-score { margin-left: 16px; font-size: 12px; font-weight: 400; color: #7fa8c9; text-shadow: none; }
+
+  /* ---- overlays ---- */
+  .overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 32px 16px; z-index: 20;
+  }
+  #menu {
+    background: linear-gradient(135deg, #0a0f1d 0%, #02050a 100%);
+    box-shadow: inset 0 0 100px rgba(0,0,0,.8);
+  }
+  .title {
+    font-size: 34px; font-weight: 700; letter-spacing: 4px; color: #ffaa00;
+    text-shadow: 0 0 20px rgba(255,170,0,.4); margin-bottom: 4px;
+  }
+  .subtitle { font-size: 15px; color: #88aadd; margin-bottom: 32px; }
+  .maps { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; }
+  .map-btn {
+    width: 260px; padding: 20px; border-radius: 12px; border: 2px solid #334466;
+    background: rgba(255,255,255,.03); cursor: pointer; color: #fff;
+    font-family: inherit; transition: all .3s; box-shadow: 0 8px 20px rgba(0,0,0,.5);
+  }
+  .map-btn:hover {
+    transform: translateY(-6px); border-color: #ffaa00;
+    background: rgba(255,170,0,.05); box-shadow: 0 15px 30px rgba(255,170,0,.2);
+  }
+  .map-icon { font-size: 44px; }
+  .map-name { font-size: 22px; font-weight: 600; margin: 10px 0; }
+  .map-desc { font-size: 13px; line-height: 1.5; color: #a0b0c0; height: 72px; margin-bottom: 16px; }
+  .map-cta {
+    display: block; background: #ff5500; color: #fff; font-weight: 700; font-size: 16px;
+    border-radius: 8px; padding: 10px 20px; box-shadow: 0 4px 10px rgba(255,85,0,.3);
+    transition: background .2s;
+  }
+  .map-btn:hover .map-cta { background: #ffaa00; box-shadow: 0 4px 15px rgba(255,170,0,.5); }
+  .map-enemy { display: block; margin-top: 8px; font-size: 12px; color: #667799; }
+  .controls { margin-top: 32px; max-width: 576px; font-size: 13px; line-height: 1.6; color: #556688; }
+  .controls b { color: #7788aa; }
+
+  .btn {
+    font-family: inherit; cursor: pointer; font-weight: 700; font-size: 16px;
+    padding: 12px 32px; border-radius: 8px; border: none; transition: all .2s;
+  }
+  .btn-primary { background: #ff5500; color: #fff; box-shadow: 0 4px 10px rgba(255,85,0,.3); }
+  .btn-primary:hover { background: #ffaa00; }
+  .btn-ghost { background: transparent; border: 2px solid #334466; color: #88aadd; }
+  .btn-ghost:hover { border-color: #ffaa00; color: #fff; }
+  .btn-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+
+  #pause { background: rgba(0,0,0,.7); backdrop-filter: blur(4px); z-index: 30; }
+  #pause h2 { font-size: 30px; letter-spacing: 3px; color: #ffaa00; margin-bottom: 8px; }
+  #pause p { font-size: 13px; color: #88aadd; margin-bottom: 32px; }
+
+  #death { background: rgba(69,10,10,.6); backdrop-filter: blur(4px); z-index: 30; }
+  #death h2 {
+    font-size: 38px; letter-spacing: 4px; color: #ef4444;
+    text-shadow: 0 0 20px rgba(255,0,0,.6); margin-bottom: 8px;
+  }
+  #death p { font-size: 13px; color: #88aadd; margin-bottom: 4px; }
+  #death .btn-row { margin-top: 28px; }
+</style>
+</head>
+<body>
+  <div id="canvas-host"></div>
+
+  <div id="crosshair" class="hidden"></div>
+  <div id="vignette" class="hidden"></div>
+
+  <div id="hud" class="hidden">
+    <div id="ammo-line">БЛАСТЕР: <span id="ammo-val">30/∞</span></div>
+    <div class="hp-row">
+      <span>HP</span>
+      <div class="hp-track"><div id="hp-fill"></div></div>
+      <span id="hp-num">100</span>
+    </div>
+    <div id="frags-line">ФРАГИ: <span id="frags-num">0</span><span id="army-score">Клоны 0 : 0 Дроиды</span></div>
+  </div>
+
+  <div id="menu" class="overlay">
+    <h1 class="title">STAR WARS: BATTLEFRONT</h1>
+    <h2 class="subtitle">ВЫБЕРИТЕ ПЛАНЕТУ ДЛЯ НАЧАЛА СРАЖЕНИЯ</h2>
+    <div class="maps">
+      <button class="map-btn" data-map="geonosis" aria-label="Начать сражение на карте Геонозис">
+        <div class="map-icon">🏜️</div>
+        <h3 class="map-name">ГЕОНОЗИС</h3>
+        <p class="map-desc">Красная пустыня, скалы и каньоны. Бойцы 501-го легиона ведут наступление на боевых дроидов B1.</p>
+        <span class="map-cta">ВСТУПИТЬ В БОЙ</span>
+        <span class="map-enemy">Противник: Дроиды B1</span>
+      </button>
+      <button class="map-btn" data-map="kamino" aria-label="Начать сражение на карте Камино">
+        <div class="map-icon">🌊</div>
+        <h3 class="map-name">КАМИНО</h3>
+        <p class="map-desc">Тайпока-Сити. Платформы посреди штормового океана. Оборона клонов против Супердроидов B2.</p>
+        <span class="map-cta">ВСТУПИТЬ В БОЙ</span>
+        <span class="map-enemy">Противник: Супердроиды B2</span>
+      </button>
+    </div>
+    <div class="controls">
+      <b>Управление в бою:</b> Передвижение: <b>WASD</b> | Обзор: <b>Мышь</b> | Огонь: <b>ЛКМ</b> (удерживайте для автоматного огня)<br>
+      Перезарядка: <b>R</b> (патроны бесконечные) | Пауза / выход: <b>Esc</b>
+    </div>
+  </div>
+
+  <div id="pause" class="overlay hidden">
+    <h2>ПАУЗА</h2>
+    <p>Курсор освобождён. Нажмите «Продолжить», чтобы вернуться в бой.</p>
+    <div class="btn-row">
+      <button id="btn-resume" class="btn btn-primary">ПРОДОЛЖИТЬ БОЙ</button>
+      <button id="btn-menu-pause" class="btn btn-ghost">ВЫЙТИ В МЕНЮ</button>
+    </div>
+  </div>
+
+  <div id="death" class="overlay hidden">
+    <h2>ВЫ ПОГИБЛИ</h2>
+    <p id="death-frags">Ваши фраги: 0</p>
+    <p id="death-score">Счёт армии — Клоны 0 : 0 Дроиды</p>
+    <div class="btn-row">
+      <button id="btn-respawn" class="btn btn-primary">ВОЗРОДИТЬСЯ</button>
+      <button id="btn-menu-death" class="btn btn-ghost">ВЫЙТИ В МЕНЮ</button>
+    </div>
+  </div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three'
+
+// ============================================================
+//  STAR WARS: BATTLEFRONT WEB EDITION — single-file build
+//  Движок Three.js + Web Audio синтез звука + UI, без ассетов.
+// ============================================================
+
+// ---------------- constants ----------------
+const PLAYER_EYE = 1.7
+const PLAYER_SPEED = 10
+const LASER_SPEED = 200 // units per second
+const BOT_SPEED = 3.2
+const MAG_SIZE = 30
+const RELOAD_MS = 1300
+const FIRE_INTERVAL_MS = 140
+const LASER_LIFETIME_MS = 2200
+const MAX_HP = 100
+const REGEN_DELAY_MS = 5000
+const REGEN_RATE = 9
+const PLAYER_HIT_R = 0.9
+const BOT_HIT_R = 1.05
+const GEO_BOUNDS = 145
+const KAMINO_PLATFORM_R = 80
+const KAMINO_PLAY_R = 74
+
+// Dune terrain shared by floor mesh, player and bots (Geonosis)
+const duneHeight = (x, z) => Math.sin(x * 0.04) * Math.cos(z * 0.04) * 2.5
+
+// Distance from 2D point to 2D segment (obstacle / LOS checks)
+function segPointDist2(ax, az, bx, bz, px, pz) {
+  const abx = bx - ax
+  const abz = bz - az
+  const apx = px - ax
+  const apz = pz - az
+  const len2 = abx * abx + abz * abz
+  let t = len2 > 0 ? (apx * abx + apz * abz) / len2 : 0
+  t = Math.max(0, Math.min(1, t))
+  const dx = ax + abx * t - px
+  const dz = az + abz * t - pz
+  return Math.hypot(dx, dz)
+}
+
+// Distance from 3D segment A-B to 3D point P (anti-tunneling hit detection)
+function segPointDist3(a, b, p) {
+  const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z
+  const apx = p.x - a.x, apy = p.y - a.y, apz = p.z - a.z
+  const len2 = abx * abx + aby * aby + abz * abz
+  let t = len2 > 0 ? (apx * abx + apy * aby + apz * abz) / len2 : 0
+  t = Math.max(0, Math.min(1, t))
+  const dx = a.x + abx * t - p.x
+  const dy = a.y + aby * t - p.y
+  const dz = a.z + abz * t - p.z
+  return Math.sqrt(dx * dx + dy * dy + dz * dz)
+}
+
+// Radius of a cone-shaped rock at given height
+function rockRadiusAt(o, y) {
+  const h = Math.max(1, o.h - 1)
+  const k = Math.min(1, Math.max(0, y / h))
+  return o.r * (1 - k) + 2.2 * k
+}
+
+// ---------------- sound: layered synthesis with echo bus (Web Audio, no assets) ----------------
+class Sfx {
+  ctx = null
+  master = null
+  echoIn = null
+  noiseBuf = null
+  stepParity = 0
+
+  init() {
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext
+      this.ctx = new AC()
+      // master chain: master -> compressor -> output (keeps overlapping shots from clipping)
+      const comp = this.ctx.createDynamicsCompressor()
+      comp.threshold.value = -18
+      comp.knee.value = 24
+      comp.ratio.value = 6
+      comp.attack.value = 0.003
+      comp.release.value = 0.22
+      comp.connect(this.ctx.destination)
+      this.master = this.ctx.createGain()
+      this.master.gain.value = 0.85
+      this.master.connect(comp)
+      // short slap-back echo — canyon feel on Geonosis, metal hall on Kamino
+      const delay = this.ctx.createDelay(0.5)
+      delay.delayTime.value = 0.17
+      const fb = this.ctx.createGain()
+      fb.gain.value = 0.3
+      const damp = this.ctx.createBiquadFilter()
+      damp.type = 'lowpass'
+      damp.frequency.value = 1400
+      this.echoIn = this.ctx.createGain()
+      this.echoIn.connect(delay)
+      delay.connect(damp)
+      damp.connect(fb)
+      fb.connect(delay)
+      damp.connect(this.master)
+    }
+    if (this.ctx.state === 'suspended') this.ctx.resume()
+  }
+
+  route(g, echoAmt = 0) {
+    if (!this.ctx || !this.master) return
+    g.connect(this.master)
+    if (echoAmt > 0 && this.echoIn) {
+      const s = this.ctx.createGain()
+      s.gain.value = echoAmt
+      g.connect(s)
+      s.connect(this.echoIn)
+    }
+  }
+
+  /** Descending oscillator sweep with optional lowpass close-down */
+  voice(p) {
+    if (!this.ctx) return
+    const t0 = this.ctx.currentTime + (p.delay || 0)
+    const osc = this.ctx.createOscillator()
+    osc.type = p.type
+    osc.frequency.setValueAtTime(Math.max(1, p.f0), t0)
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1, p.f1), t0 + p.dur)
+    let node = osc
+    if (p.lp0) {
+      const lp = this.ctx.createBiquadFilter()
+      lp.type = 'lowpass'
+      lp.Q.value = 2
+      lp.frequency.setValueAtTime(p.lp0, t0)
+      if (p.lp1) lp.frequency.exponentialRampToValueAtTime(Math.max(40, p.lp1), t0 + p.dur)
+      node.connect(lp)
+      node = lp
+    }
+    const g = this.ctx.createGain()
+    g.gain.setValueAtTime(p.vol, t0)
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + p.dur)
+    node.connect(g)
+    this.route(g, p.echo || 0)
+    osc.start(t0)
+    osc.stop(t0 + p.dur + 0.02)
+  }
+
+  noise(p) {
+    if (!this.ctx) return
+    if (!this.noiseBuf) {
+      const len = Math.floor(this.ctx.sampleRate * 0.14)
+      this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate)
+      const d = this.noiseBuf.getChannelData(0)
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
+    }
+    const t0 = this.ctx.currentTime + (p.delay || 0)
+    const src = this.ctx.createBufferSource()
+    src.buffer = this.noiseBuf
+    src.playbackRate.value = 0.9 + Math.random() * 0.2
+    const f = this.ctx.createBiquadFilter()
+    f.type = p.type || 'bandpass'
+    f.frequency.value = p.freq
+    f.Q.value = p.q != null ? p.q : 1
+    const g = this.ctx.createGain()
+    g.gain.setValueAtTime(p.vol, t0)
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + p.dur)
+    src.connect(f)
+    f.connect(g)
+    this.route(g, p.echo || 0)
+    src.start(t0)
+    src.stop(t0 + p.dur + 0.02)
+  }
+
+  laser(owner) {
+    const r = 0.92 + Math.random() * 0.16 // shot-to-shot pitch variance, like the films
+    if (owner === 'droid') {
+      // Separatist heavy blaster: low chunky "DOW" with sub thump and grit
+      this.voice({ type: 'square', f0: 820 * r, f1: 115, dur: 0.22, vol: 0.14, lp0: 2600, lp1: 480, echo: 0.5 })
+      this.voice({ type: 'sawtooth', f0: 410 * r, f1: 68, dur: 0.2, vol: 0.11, echo: 0.4 })
+      this.voice({ type: 'sine', f0: 150 * r, f1: 52, dur: 0.16, vol: 0.15 })
+      this.noise({ type: 'lowpass', freq: 900, dur: 0.07, vol: 0.09, echo: 0.3 })
+    } else if (owner === 'clone') {
+      // clone carbine: bright short snap
+      this.voice({ type: 'sawtooth', f0: 1500 * r, f1: 250, dur: 0.11, vol: 0.11, lp0: 5200, lp1: 900, echo: 0.35 })
+      this.voice({ type: 'square', f0: 2250 * r, f1: 380, dur: 0.09, vol: 0.05 })
+      this.noise({ type: 'bandpass', freq: 3200, dur: 0.035, vol: 0.09 })
+    } else {
+      // player rifle: the iconic E-11 style "PEW" — sharp metallic descending ping + snap
+      this.voice({ type: 'sawtooth', f0: 1750 * r, f1: 210, dur: 0.15, vol: 0.15, lp0: 6000, lp1: 650, echo: 0.45 })
+      this.voice({ type: 'square', f0: 2600 * r, f1: 310, dur: 0.12, vol: 0.06, echo: 0.3 })
+      this.voice({ type: 'sine', f0: 300, f1: 88, dur: 0.1, vol: 0.1 })
+      this.noise({ type: 'bandpass', freq: 3600, dur: 0.04, vol: 0.11 })
+    }
+  }
+
+  step(map) {
+    // alternate heel/toe pitch so repeated steps sound like walking
+    this.stepParity ^= 1
+    const p = this.stepParity ? 1.07 : 0.94
+    if (map === 'kamino') {
+      // metal grating of the platforms: ring + clank + heel thump
+      this.voice({ type: 'sine', f0: 660 * p, f1: 235, dur: 0.07, vol: 0.06, echo: 0.25 })
+      this.noise({ type: 'highpass', freq: 2400, dur: 0.03, vol: 0.06 })
+      this.voice({ type: 'sine', f0: 150 * p, f1: 60, dur: 0.08, vol: 0.13 })
+      this.noise({ type: 'bandpass', freq: 480, dur: 0.05, vol: 0.05 })
+    } else {
+      // sand crunch of Geonosis: layered filtered noise + soft heel
+      this.noise({ type: 'bandpass', freq: 380 * p, dur: 0.09, vol: 0.17, q: 0.8 })
+      this.noise({ type: 'bandpass', freq: 850 * p, dur: 0.05, vol: 0.07, delay: 0.03 })
+      this.voice({ type: 'sine', f0: 110, f1: 52, dur: 0.06, vol: 0.06 })
+    }
+  }
+
+  hit() {
+    this.voice({ type: 'square', f0: 1400, f1: 950, dur: 0.05, vol: 0.055 })
+    this.noise({ type: 'bandpass', freq: 2400, dur: 0.03, vol: 0.05 })
+  }
+
+  kill() {
+    this.voice({ type: 'sine', f0: 520, f1: 1240, dur: 0.13, vol: 0.07 })
+    this.voice({ type: 'sine', f0: 780, f1: 1860, dur: 0.13, vol: 0.045, delay: 0.06 })
+  }
+
+  hurt() {
+    this.voice({ type: 'sawtooth', f0: 165, f1: 52, dur: 0.22, vol: 0.14, lp0: 900 })
+  }
+
+  death() {
+    this.voice({ type: 'sawtooth', f0: 340, f1: 26, dur: 0.85, vol: 0.17, lp0: 1200, lp1: 110, echo: 0.5 })
+  }
+
+  reload() {
+    this.noise({ type: 'bandpass', freq: 1800, dur: 0.04, vol: 0.09 })
+    this.voice({ type: 'square', f0: 430, f1: 300, dur: 0.05, vol: 0.045, delay: 0.05 })
+    this.noise({ type: 'bandpass', freq: 2200, dur: 0.05, vol: 0.1, delay: 0.6 })
+    this.voice({ type: 'square', f0: 620, f1: 460, dur: 0.06, vol: 0.045, delay: 0.66 })
+  }
+}
+
+// ---------------- engine ----------------
+class BattlefrontEngine {
+  container = null
+  cb = null
+  renderer = null
+  canvas = null
+  scene = null
+  camera = null
+  clock = new THREE.Clock()
+  rafId = 0
+  disposed = false
+
+  map = null
+  paused = true
+  dead = false
+
+  hp = MAX_HP
+  ammo = MAG_SIZE
+  reloading = false
+  reloadUntil = 0
+  frags = 0
+  clonesScore = 0
+  droidsScore = 0
+  firing = false
+  lastShotAt = 0
+  lastDamageAt = 0
+  lastStepAt = 0
+  recoilUntil = 0
+  spawnPoint = new THREE.Vector3(0, PLAYER_EYE, 0)
+
+  bots = []
+  lasers = []
+  dying = []
+  obstacles = []
+  weaponGroup = null
+  muzzleLight = null
+  muzzleTip = null
+  weaponBaseZ = -0.5
+  sfx = new Sfx()
+
+  hudCache = ''
+  moveF = false
+  moveB = false
+  moveL = false
+  moveR = false
+
+  // ---- bound listeners ----
+  onKeyDown = (e) => {
+    switch (e.code) {
+      case 'KeyW': this.moveF = true; break
+      case 'KeyS': this.moveB = true; break
+      case 'KeyA': this.moveL = true; break
+      case 'KeyD': this.moveR = true; break
+      case 'KeyR': this.startReload(); break
+    }
+  }
+
+  onKeyUp = (e) => {
+    switch (e.code) {
+      case 'KeyW': this.moveF = false; break
+      case 'KeyS': this.moveB = false; break
+      case 'KeyA': this.moveL = false; break
+      case 'KeyD': this.moveR = false; break
+    }
+  }
+
+  onMouseDown = (e) => {
+    if (e.button !== 0) return
+    if (document.pointerLockElement !== this.canvas) return
+    this.firing = true
+  }
+
+  onMouseUp = () => {
+    this.firing = false
+  }
+
+  onMouseMove = (e) => {
+    if (document.pointerLockElement !== this.canvas || !this.camera) return
+    // FIX: rotation order YXZ — no camera roll when combining yaw + pitch
+    this.camera.rotation.y -= e.movementX * 0.0022
+    this.camera.rotation.x -= e.movementY * 0.0022
+    this.camera.rotation.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, this.camera.rotation.x))
+  }
+
+  onPointerLockChange = () => {
+    if (document.pointerLockElement === this.canvas) {
+      this.paused = false
+    } else if (this.map && !this.dead) {
+      // FIX: graceful pause instead of dumping the player straight to the menu
+      this.paused = true
+      this.resetKeys()
+      this.firing = false
+      this.cb.onPointerLockLost()
+    }
+  }
+
+  onResize = () => {
+    if (!this.camera) return
+    this.camera.aspect = window.innerWidth / window.innerHeight
+    this.camera.updateProjectionMatrix()
+    this.renderer.setSize(window.innerWidth, window.innerHeight)
+  }
+
+  constructor(container, cb) {
+    this.container = container
+    this.cb = cb
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)) // FIX: cap pixel ratio
+    this.renderer.setSize(window.innerWidth, window.innerHeight)
+    this.canvas = this.renderer.domElement
+    this.canvas.style.display = 'block'
+    this.container.appendChild(this.canvas)
+
+    window.addEventListener('keydown', this.onKeyDown)
+    window.addEventListener('keyup', this.onKeyUp)
+    document.addEventListener('mousedown', this.onMouseDown)
+    document.addEventListener('mouseup', this.onMouseUp)
+    document.addEventListener('mousemove', this.onMouseMove)
+    document.addEventListener('pointerlockchange', this.onPointerLockChange)
+    window.addEventListener('resize', this.onResize)
+
+    this.rafId = requestAnimationFrame(this.tick)
+  }
+
+  // ================= public API =================
+  start(map) {
+    this.sfx.init()
+    this.clearWorld()
+    this.map = map
+    this.dead = false
+    this.hp = MAX_HP
+    this.ammo = MAG_SIZE
+    this.reloading = false
+    this.firing = false
+    this.frags = 0
+    this.clonesScore = 0
+    this.droidsScore = 0
+    this.hudCache = ''
+    this.resetKeys()
+    this.buildWorld()
+    this.pushHud(true)
+    this.requestLock()
+  }
+
+  resume() {
+    if (this.dead || !this.map) return
+    this.requestLock()
+  }
+
+  respawn() {
+    if (!this.map || !this.camera) return
+    this.dead = false
+    this.hp = MAX_HP
+    this.ammo = MAG_SIZE
+    this.reloading = false
+    this.firing = false
+    this.camera.position.copy(this.spawnPoint)
+    this.camera.rotation.set(0, 0, 0)
+    this.pushHud(true)
+    this.requestLock()
+  }
+
+  exitToMenu() {
+    this.map = null
+    this.paused = true
+    this.dead = false
+    this.firing = false
+    this.resetKeys()
+    if (document.pointerLockElement === this.canvas) document.exitPointerLock()
+  }
+
+  dispose() {
+    this.disposed = true
+    cancelAnimationFrame(this.rafId)
+    window.removeEventListener('keydown', this.onKeyDown)
+    window.removeEventListener('keyup', this.onKeyUp)
+    document.removeEventListener('mousedown', this.onMouseDown)
+    document.removeEventListener('mouseup', this.onMouseUp)
+    document.removeEventListener('mousemove', this.onMouseMove)
+    document.removeEventListener('pointerlockchange', this.onPointerLockChange)
+    window.removeEventListener('resize', this.onResize)
+    if (document.pointerLockElement === this.canvas) document.exitPointerLock()
+    this.clearWorld()
+    this.renderer.dispose()
+    this.canvas.remove()
+  }
+
+  requestLock() {
+    try {
+      const p = this.canvas.requestPointerLock()
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {
+          // Chrome enforces ~1.25s cooldown after Esc — pause overlay lets user retry
+          this.paused = true
+          this.cb.onPointerLockLost()
+        })
+      }
+    } catch {
+      this.paused = true
+      this.cb.onPointerLockLost()
+    }
+  }
+
+  resetKeys() {
+    this.moveF = this.moveB = this.moveL = this.moveR = false
+  }
+
+  // ================= world building =================
+  clearWorld() {
+    if (this.scene) {
+      this.scene.traverse((obj) => {
+        const mesh = obj
+        if (mesh.geometry) mesh.geometry.dispose()
+        const mat = mesh.material
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose())
+        else if (mat) mat.dispose()
+      })
+      this.scene.clear()
+    }
+    this.scene = null
+    this.camera = null
+    this.weaponGroup = null
+    this.muzzleLight = null
+    this.muzzleTip = null
+    this.bots = []
+    this.lasers = []
+    this.dying = []
+    this.obstacles = []
+  }
+
+  buildWorld() {
+    const map = this.map
+    if (!map) return
+    const scene = new THREE.Scene()
+    this.scene = scene
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1200)
+    camera.rotation.order = 'YXZ' // FIX: FPS camera order
+    this.camera = camera
+
+    if (map === 'geonosis') {
+      scene.background = new THREE.Color(0xcc6633)
+      scene.fog = new THREE.FogExp2(0xcc6633, 0.015)
+      scene.add(new THREE.AmbientLight(0xffddbb, 0.6))
+      const sun = new THREE.DirectionalLight(0xffaa66, 1.2)
+      sun.position.set(50, 100, 50)
+      scene.add(sun)
+
+      // dune floor — same height function the player and bots follow
+      const floorGeo = new THREE.PlaneGeometry(1000, 1000, 96, 96)
+      const pos = floorGeo.attributes.position
+      for (let i = 0; i < pos.count; i++) {
+        pos.setZ(i, duneHeight(pos.getX(i), pos.getY(i)))
+      }
+      floorGeo.computeVertexNormals()
+      const floor = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ color: 0xb54a1e, roughness: 0.9 }))
+      floor.rotation.x = -Math.PI / 2
+      scene.add(floor)
+
+      // rocks — also registered as collision / LOS obstacles
+      const rockMat = new THREE.MeshStandardMaterial({ color: 0x933a13, roughness: 0.9 })
+      for (let i = 0; i < 35; i++) {
+        const h = 15 + Math.random() * 25
+        const r = 2 + Math.random() * 3
+        const rock = new THREE.Mesh(new THREE.CylinderGeometry(2.2, r, h, 6), rockMat)
+        const x = Math.random() * 280 - 140
+        const z = Math.random() * 280 - 140
+        rock.position.set(x, h / 2 - 1, z)
+        scene.add(rock)
+        this.obstacles.push({ x, z, r: r * 0.85, h })
+      }
+
+      this.spawnPoint.set(0, duneHeight(0, 0) + PLAYER_EYE, 0)
+      camera.position.copy(this.spawnPoint)
+    } else {
+      // Kamino
+      scene.background = new THREE.Color(0x1a2530)
+      scene.fog = new THREE.FogExp2(0x1a2530, 0.02)
+      scene.add(new THREE.AmbientLight(0x7799bb, 0.5))
+      const light = new THREE.DirectionalLight(0xaaddff, 0.9)
+      light.position.set(20, 80, -20)
+      scene.add(light)
+
+      const sea = new THREE.Mesh(
+        new THREE.PlaneGeometry(2000, 2000),
+        new THREE.MeshStandardMaterial({ color: 0x05101a, roughness: 0.2, metalness: 0.8 })
+      )
+      sea.rotation.x = -Math.PI / 2
+      sea.position.y = -8
+      scene.add(sea)
+
+      const platform = new THREE.Mesh(
+        new THREE.CylinderGeometry(KAMINO_PLATFORM_R, KAMINO_PLATFORM_R, 2, 48),
+        new THREE.MeshStandardMaterial({ color: 0x333b45, metalness: 0.7, roughness: 0.3 })
+      )
+      platform.position.y = -1
+      scene.add(platform)
+
+      const domeMat = new THREE.MeshStandardMaterial({ color: 0xd0d5dd, roughness: 0.4 })
+      const spireMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.5 })
+      const domes = [[0, -55, 16], [42, 30, 11], [-45, 25, 12]]
+      for (const [dx, dz, rr] of domes) {
+        const building = new THREE.Mesh(new THREE.SphereGeometry(rr, 32, 16), domeMat)
+        building.position.set(dx, rr / 2.6, dz)
+        scene.add(building)
+        const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 1.6, 45), spireMat)
+        spire.position.set(dx, rr / 2.6 + 20, dz)
+        scene.add(spire)
+        this.obstacles.push({ x: dx, z: dz, r: rr * 0.9, h: rr * 1.4 })
+      }
+
+      // low barriers as cover on the platform
+      const barrierMat = new THREE.MeshStandardMaterial({ color: 0x4a5560, metalness: 0.6, roughness: 0.4 })
+      for (let i = 0; i < 7; i++) {
+        const a = Math.random() * Math.PI * 2
+        const rr = 18 + Math.random() * 40
+        const x = Math.cos(a) * rr
+        const z = Math.sin(a) * rr
+        const barrier = new THREE.Mesh(new THREE.BoxGeometry(7, 2.2, 1.6), barrierMat)
+        barrier.position.set(x, 1.1, z)
+        barrier.rotation.y = Math.random() * Math.PI
+        scene.add(barrier)
+        this.obstacles.push({ x, z, r: 3.4, h: 2.2 })
+      }
+
+      this.spawnPoint.set(0, PLAYER_EYE, 30)
+      camera.position.copy(this.spawnPoint)
+    }
+
+    // weapon attached to camera (DC-15 style blaster rifle)
+    const weaponGroup = this.buildWeapon()
+    weaponGroup.position.set(0.3, -0.27, this.weaponBaseZ)
+    camera.add(weaponGroup)
+    this.weaponGroup = weaponGroup
+
+    const muzzleTip = new THREE.Object3D()
+    muzzleTip.position.set(0, 0.01, -0.72)
+    weaponGroup.add(muzzleTip)
+    this.muzzleTip = muzzleTip
+
+    const muzzle = new THREE.PointLight(0x66ccff, 0, 9)
+    muzzle.position.set(0, 0.01, -0.78)
+    weaponGroup.add(muzzle)
+    this.muzzleLight = muzzle
+    scene.add(camera)
+
+    // spawn AI armies
+    const cloneCount = map === 'geonosis' ? 12 : 10
+    const droidCount = map === 'geonosis' ? 15 : 12
+    for (let i = 0; i < cloneCount; i++) this.spawnBot(true)
+    for (let i = 0; i < droidCount; i++) this.spawnBot(false)
+  }
+
+  // ================= models =================
+  createCloneModel() {
+    const g = new THREE.Group()
+    const stripeColor = this.map === 'geonosis' ? 0x2a52ff : 0xff7700
+    const armor = new THREE.MeshStandardMaterial({ color: 0xe8eaed, roughness: 0.35, metalness: 0.15 })
+    const armorDark = new THREE.MeshStandardMaterial({ color: 0x8f97a3, roughness: 0.5, metalness: 0.2 })
+    const stripeMat = new THREE.MeshStandardMaterial({ color: stripeColor, roughness: 0.4 })
+    const visorMat = new THREE.MeshStandardMaterial({ color: 0x0d1218, roughness: 0.25, metalness: 0.5 })
+    const gunMat = new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.55, metalness: 0.35 })
+
+    // legs — pivot groups at the hips so they can swing while walking
+    const mkLeg = (side) => {
+      const pivot = new THREE.Group()
+      pivot.position.set(0.11 * side, 0.94, 0)
+      const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.062, 0.5, 10), armor)
+      thigh.position.y = -0.25
+      pivot.add(thigh)
+      const knee = new THREE.Mesh(new THREE.SphereGeometry(0.065), armorDark)
+      knee.position.y = -0.5
+      pivot.add(knee)
+      const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.07, 0.42, 10), armor)
+      shin.position.y = -0.71
+      pivot.add(shin)
+      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.07, 0.22), armorDark)
+      boot.position.set(0, -0.93, 0.05)
+      pivot.add(boot)
+      g.add(pivot)
+      return pivot
+    }
+    const legL = mkLeg(1)
+    const legR = mkLeg(-1)
+
+    // torso: waist, chest, chest plate with legion stripes, belt
+    const waist = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.1, 0.16, 10), armorDark)
+    waist.position.y = 1.0
+    g.add(waist)
+    const chest = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.155, 0.4, 10), armor)
+    chest.position.y = 1.28
+    g.add(chest)
+    const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.24, 0.08), armor)
+    chestPlate.position.set(0, 1.33, 0.15)
+    g.add(chestPlate)
+    for (const side of [-1, 1]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.2, 0.02), stripeMat)
+      bar.position.set(0.085 * side, 1.33, 0.196)
+      g.add(bar)
+    }
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.24), armorDark)
+    belt.position.y = 1.08
+    g.add(belt)
+
+    // arms — right one aims forward holding the carbine
+    const mkArm = (side) => {
+      const pivot = new THREE.Group()
+      pivot.position.set(0.25 * side, 1.44, 0)
+      const pad = new THREE.Mesh(new THREE.SphereGeometry(0.09), armor)
+      pad.position.y = 0.02
+      pivot.add(pad)
+      const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.046, 0.3, 8), armor)
+      upper.position.y = -0.16
+      pivot.add(upper)
+      const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.055, 0.28, 8), armor)
+      fore.position.y = -0.44
+      pivot.add(fore)
+      const glove = new THREE.Mesh(new THREE.SphereGeometry(0.05), armorDark)
+      glove.position.y = -0.6
+      pivot.add(glove)
+      g.add(pivot)
+      return pivot
+    }
+    const armL = mkArm(1)
+    const armR = mkArm(-1)
+    armL.rotation.x = -0.25
+    armR.rotation.x = -1.35
+
+    // blaster carbine in the right hand (built along the arm axis)
+    const rifle = new THREE.Group()
+    const rBody = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.34, 0.07), gunMat)
+    rBody.position.y = -0.76
+    rifle.add(rBody)
+    const rBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.26, 8), gunMat)
+    rBarrel.position.y = -0.98
+    rifle.add(rBarrel)
+    const rStock = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.14, 0.05), gunMat)
+    rStock.position.y = -0.6
+    rifle.add(rStock)
+    armR.add(rifle)
+
+    // Phase II helmet with T-visor and crest fin
+    const head = new THREE.Group()
+    head.position.set(0, 1.6, 0)
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 12), armor)
+    dome.scale.set(1, 1.1, 1.08)
+    head.add(dome)
+    const jaw = new THREE.Mesh(new THREE.CylinderGeometry(0.125, 0.105, 0.16, 12), armor)
+    jaw.position.y = -0.09
+    head.add(jaw)
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.05), visorMat)
+    visor.position.set(0, 0.02, 0.12)
+    head.add(visor)
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.09, 0.24), armor)
+    fin.position.set(0, 0.14, 0.01)
+    head.add(fin)
+    g.add(head)
+
+    // backpack
+    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.28, 0.11), armorDark)
+    pack.position.set(0, 1.26, -0.17)
+    g.add(pack)
+
+    g.userData.limbs = { legL, legR, armL }
+    return g
+  }
+
+  createDroidModel() {
+    const g = new THREE.Group()
+    if (this.map === 'geonosis') {
+      // B1 battle droid — skinny tan frame, hunched spine, elongated head
+      const bone = new THREE.MeshStandardMaterial({ color: 0xc9a97a, roughness: 0.6, metalness: 0.1 })
+      const boneDark = new THREE.MeshStandardMaterial({ color: 0x96794f, roughness: 0.65 })
+      const jointMat = new THREE.MeshStandardMaterial({ color: 0x64553a, roughness: 0.55, metalness: 0.25 })
+      const gunMat = new THREE.MeshStandardMaterial({ color: 0x2a2620, roughness: 0.5, metalness: 0.35 })
+
+      const mkLeg = (side) => {
+        const pivot = new THREE.Group()
+        pivot.position.set(0.09 * side, 1.0, 0)
+        const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.03, 0.52, 8), bone)
+        thigh.position.y = -0.26
+        pivot.add(thigh)
+        const knee = new THREE.Mesh(new THREE.SphereGeometry(0.037), jointMat)
+        knee.position.y = -0.52
+        pivot.add(knee)
+        const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.46, 8), bone)
+        shin.position.y = -0.76
+        pivot.add(shin)
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.045, 0.18), boneDark)
+        foot.position.set(0, -0.99, 0.04)
+        pivot.add(foot)
+        g.add(pivot)
+        return pivot
+      }
+      const legL = mkLeg(1)
+      const legR = mkLeg(-1)
+
+      const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.09, 0.1), jointMat)
+      pelvis.position.y = 1.02
+      g.add(pelvis)
+      const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.42, 8), bone)
+      spine.position.set(0, 1.22, -0.06)
+      spine.rotation.x = 0.35
+      g.add(spine)
+      const chest = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.22, 0.12), bone)
+      chest.position.set(0, 1.38, -0.12)
+      chest.rotation.x = 0.2
+      g.add(chest)
+
+      const mkArm = (side) => {
+        const pivot = new THREE.Group()
+        pivot.position.set(0.13 * side, 1.42, -0.1)
+        const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.022, 0.4, 8), bone)
+        upper.position.y = -0.2
+        pivot.add(upper)
+        const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, 0.36, 8), bone)
+        fore.position.y = -0.56
+        pivot.add(fore)
+        g.add(pivot)
+        return pivot
+      }
+      const armL = mkArm(1)
+      const armR = mkArm(-1)
+      armL.rotation.x = -0.4
+      armR.rotation.x = -1.3
+
+      const rifle = new THREE.Group()
+      const rBody = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.3, 0.06), gunMat)
+      rBody.position.y = -0.78
+      rifle.add(rBody)
+      const rBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.24, 8), gunMat)
+      rBarrel.position.y = -0.96
+      rifle.add(rBarrel)
+      armR.add(rifle)
+
+      // elongated head with snout and dark eyes
+      const head = new THREE.Group()
+      head.position.set(0, 1.52, 0.04)
+      head.rotation.x = 0.12
+      const skull = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.11, 0.34), bone)
+      skull.position.z = 0.08
+      head.add(skull)
+      const snout = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.12), boneDark)
+      snout.position.set(0, -0.02, 0.3)
+      head.add(snout)
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 })
+      for (const side of [-1, 1]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.012), eyeMat)
+        eye.position.set(0.028 * side, 0.02, 0.24)
+        head.add(eye)
+      }
+      g.add(head)
+
+      const pack = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.32, 0.07), boneDark)
+      pack.position.set(0, 1.24, -0.22)
+      g.add(pack)
+
+      g.userData.limbs = { legL, legR, armL }
+    } else {
+      // B2 super battle droid — heavy armored chassis, wrist blasters, red sensors
+      const shell = new THREE.MeshStandardMaterial({ color: 0x5d6673, roughness: 0.42, metalness: 0.6 })
+      const dark = new THREE.MeshStandardMaterial({ color: 0x363c45, roughness: 0.5, metalness: 0.5 })
+      const gunMetal = new THREE.MeshStandardMaterial({ color: 0x22262c, roughness: 0.4, metalness: 0.7 })
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff2222 })
+
+      const mkLeg = (side) => {
+        const pivot = new THREE.Group()
+        pivot.position.set(0.16 * side, 0.96, 0)
+        const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.07, 0.5, 10), shell)
+        thigh.position.y = -0.25
+        pivot.add(thigh)
+        const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.08, 0.44, 10), dark)
+        shin.position.y = -0.72
+        pivot.add(shin)
+        const boot = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.24), dark)
+        boot.position.set(0, -0.95, 0.05)
+        pivot.add(boot)
+        g.add(pivot)
+        return pivot
+      }
+      const legL = mkLeg(1)
+      const legR = mkLeg(-1)
+
+      const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.16, 0.26), dark)
+      pelvis.position.y = 1.0
+      g.add(pelvis)
+
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.52, 0.34), shell)
+      torso.position.set(0, 1.32, -0.02)
+      torso.rotation.x = 0.12
+      g.add(torso)
+      const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 0.06), dark)
+      chestPlate.position.set(0, 1.34, 0.17)
+      g.add(chestPlate)
+
+      // head embedded in the torso, no neck
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.13, 0.2), shell)
+      head.position.set(0, 1.55, 0.1)
+      g.add(head)
+      for (const side of [-1, 1]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.016), eyeMat)
+        eye.position.set(0.045 * side, 1.56, 0.21)
+        g.add(eye)
+      }
+
+      const mkArm = (side) => {
+        const pivot = new THREE.Group()
+        pivot.position.set(0.37 * side, 1.46, 0)
+        const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.06, 0.34, 10), shell)
+        upper.position.y = -0.17
+        pivot.add(upper)
+        const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.32, 10), dark)
+        fore.position.y = -0.48
+        pivot.add(fore)
+        const blaster = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.3, 10), gunMetal)
+        blaster.rotation.x = Math.PI / 2
+        blaster.position.set(0, -0.62, 0.1)
+        pivot.add(blaster)
+        g.add(pivot)
+        return pivot
+      }
+      const armL = mkArm(1)
+      mkArm(-1)
+      armL.rotation.x = -1.1
+
+      g.userData.limbs = { legL, legR, armL }
+    }
+    return g
+  }
+
+  /** Player's DC-15 style blaster rifle, built from primitives */
+  buildWeapon() {
+    const g = new THREE.Group()
+    const body = new THREE.MeshStandardMaterial({ color: 0x1b1e22, roughness: 0.45, metalness: 0.35 })
+    const metal = new THREE.MeshStandardMaterial({ color: 0x2e343b, roughness: 0.35, metalness: 0.55 })
+    const glow = new THREE.MeshStandardMaterial({
+      color: 0x1899d6,
+      emissive: 0x1899d6,
+      emissiveIntensity: 1.6,
+      roughness: 0.3,
+    })
+
+    const recv = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.11, 0.46), body)
+    recv.position.set(0, 0, -0.05)
+    g.add(recv)
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.4), metal)
+    rail.position.set(0, 0.07, -0.08)
+    g.add(rail)
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.42, 12), metal)
+    barrel.rotation.x = Math.PI / 2
+    barrel.position.set(0, 0.01, -0.5)
+    g.add(barrel)
+    const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.09, 12), body)
+    muzzle.rotation.x = Math.PI / 2
+    muzzle.position.set(0, 0.01, -0.66)
+    g.add(muzzle)
+    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.16, 12), body)
+    scope.rotation.x = Math.PI / 2
+    scope.position.set(0, 0.12, -0.18)
+    g.add(scope)
+    const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.012, 12), glow)
+    lens.rotation.x = Math.PI / 2
+    lens.position.set(0, 0.12, -0.262)
+    g.add(lens)
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.09, 0.22), body)
+    stock.position.set(0, -0.01, 0.24)
+    g.add(stock)
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.06), body)
+    grip.position.set(0, -0.1, 0.1)
+    grip.rotation.x = 0.35
+    g.add(grip)
+    const cell = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.12, 0.07), glow)
+    cell.position.set(0, -0.09, -0.08)
+    g.add(cell)
+    return g
+  }
+
+  spawnBot(isClone) {
+    if (!this.scene || !this.camera || !this.map) return
+    const mesh = isClone ? this.createCloneModel() : this.createDroidModel()
+    let x = 0
+    let z = 0
+    // spawn away from the player (min 25 units)
+    for (let attempt = 0; attempt < 10; attempt++) {
+      if (this.map === 'geonosis') {
+        x = Math.random() * 280 - 140
+        z = Math.random() * 280 - 140
+      } else {
+        const a = Math.random() * Math.PI * 2
+        const rr = 15 + Math.random() * 55
+        x = Math.cos(a) * rr
+        z = Math.sin(a) * rr
+      }
+      const dx = x - this.camera.position.x
+      const dz = z - this.camera.position.z
+      if (Math.hypot(dx, dz) > 25) break
+    }
+    const y = this.map === 'geonosis' ? duneHeight(x, z) : 0
+    mesh.position.set(x, y, z)
+    this.scene.add(mesh)
+    const limbs = mesh.userData.limbs || {}
+    this.bots.push({
+      mesh,
+      isClone,
+      health: 100,
+      lastShot: 0,
+      nextThink: 0,
+      strafeDir: Math.random() > 0.5 ? 1 : -1,
+      legL: limbs.legL || null,
+      legR: limbs.legR || null,
+      armL: limbs.armL || null,
+      walkPhase: Math.random() * Math.PI * 2,
+    })
+  }
+
+  // ================= lasers =================
+  spawnLaser(from, dir, owner, dmg) {
+    if (!this.scene) return
+    const geo = new THREE.CylinderGeometry(0.04, 0.04, 1.6)
+    geo.rotateX(Math.PI / 2)
+    const color = owner === 'droid' ? 0xff1e1e : 0x00b4ff
+    const laser = new THREE.Mesh(
+      geo,
+      new THREE.MeshBasicMaterial({
+        color,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        depthWrite: false,
+      })
+    )
+    laser.position.copy(from)
+    laser.lookAt(from.clone().add(dir))
+    this.scene.add(laser)
+    this.lasers.push({
+      mesh: laser,
+      dir: dir.clone().normalize(),
+      owner,
+      born: performance.now(),
+      prev: from.clone(),
+      dmg,
+    })
+    this.sfx.laser(owner)
+  }
+
+  lineBlocked(a, b) {
+    for (const o of this.obstacles) {
+      if (a.y > o.h && b.y > o.h) continue
+      if (segPointDist2(a.x, a.z, b.x, b.z, o.x, o.z) < o.r * 0.85) return true
+    }
+    return false
+  }
+
+  // ================= player =================
+  startReload() {
+    if (this.reloading || this.ammo === MAG_SIZE || this.dead || !this.map) return
+    this.reloading = true
+    this.reloadUntil = performance.now() + RELOAD_MS
+    this.sfx.reload()
+    this.pushHud(true)
+  }
+
+  shoot(t) {
+    if (!this.camera || this.dead || this.reloading || this.ammo <= 0) return
+    if (t - this.lastShotAt < FIRE_INTERVAL_MS) return
+    this.lastShotAt = t
+    this.ammo--
+    this.pushHud(true)
+
+    const cam = this.camera
+    cam.updateMatrixWorld()
+    const dir = new THREE.Vector3()
+    cam.getWorldDirection(dir)
+    // small spread
+    dir.x += (Math.random() - 0.5) * 0.02
+    dir.y += (Math.random() - 0.5) * 0.02
+    dir.z += (Math.random() - 0.5) * 0.02
+    dir.normalize()
+
+    const tip = new THREE.Vector3()
+    if (this.muzzleTip) this.muzzleTip.getWorldPosition(tip)
+    else tip.set(0.3, -0.25, -1.0).applyMatrix4(cam.matrixWorld)
+    this.spawnLaser(tip, dir, 'player', 50)
+
+    if (this.muzzleLight) this.muzzleLight.intensity = 3
+    this.recoilUntil = t + 60
+    if (this.weaponGroup) this.weaponGroup.position.z = this.weaponBaseZ + 0.06
+
+    if (this.ammo === 0) this.startReload()
+  }
+
+  damagePlayer(dmg, t) {
+    if (this.dead) return
+    this.hp = Math.max(0, this.hp - dmg)
+    this.lastDamageAt = t
+    this.cb.onDamage()
+    this.sfx.hurt()
+    this.pushHud(true)
+    if (this.hp <= 0) {
+      this.dead = true
+      this.firing = false
+      this.resetKeys()
+      this.sfx.death()
+      if (document.pointerLockElement === this.canvas) document.exitPointerLock()
+      this.cb.onDeath()
+    }
+  }
+
+  updatePlayer(dt, t) {
+    const cam = this.camera
+    if (!cam || !this.map) return
+
+    if (this.reloading && t >= this.reloadUntil) {
+      this.reloading = false
+      this.ammo = MAG_SIZE
+      this.pushHud(true)
+    }
+
+    // regen after delay
+    if (!this.dead && this.hp < MAX_HP && t - this.lastDamageAt > REGEN_DELAY_MS) {
+      this.hp = Math.min(MAX_HP, this.hp + REGEN_RATE * dt)
+      this.pushHud(false)
+    }
+
+    if (this.dead) return
+
+    if (this.firing) this.shoot(t)
+
+    // recoil restore
+    if (this.weaponGroup && t >= this.recoilUntil && this.weaponGroup.position.z !== this.weaponBaseZ) {
+      this.weaponGroup.position.z = this.weaponBaseZ
+    }
+    if (this.muzzleLight && this.muzzleLight.intensity > 0) {
+      this.muzzleLight.intensity = Math.max(0, this.muzzleLight.intensity - dt * 30)
+    }
+
+    // movement — delta-time based (frame-rate independent)
+    const locked = document.pointerLockElement === this.canvas
+    if (locked) {
+      const dir = new THREE.Vector3()
+      cam.getWorldDirection(dir)
+      dir.y = 0
+      dir.normalize()
+      const right = new THREE.Vector3(-dir.z, 0, dir.x)
+      let moved = false
+      if (this.moveF) { cam.position.addScaledVector(dir, PLAYER_SPEED * dt); moved = true }
+      if (this.moveB) { cam.position.addScaledVector(dir, -PLAYER_SPEED * dt); moved = true }
+      if (this.moveL) { cam.position.addScaledVector(right, -PLAYER_SPEED * dt); moved = true }
+      if (this.moveR) { cam.position.addScaledVector(right, PLAYER_SPEED * dt); moved = true }
+
+      if (moved) {
+        if (t - this.lastStepAt > 340) {
+          this.sfx.step(this.map)
+          this.lastStepAt = t
+        }
+        // rock collision — push player out
+        for (const o of this.obstacles) {
+          const dx = cam.position.x - o.x
+          const dz = cam.position.z - o.z
+          const d = Math.hypot(dx, dz)
+          const minD = rockRadiusAt(o, cam.position.y) + 0.6
+          if (d < minD && d > 0.0001) {
+            cam.position.x = o.x + (dx / d) * minD
+            cam.position.z = o.z + (dz / d) * minD
+          }
+        }
+        // map bounds
+        if (this.map === 'geonosis') {
+          cam.position.x = Math.max(-GEO_BOUNDS, Math.min(GEO_BOUNDS, cam.position.x))
+          cam.position.z = Math.max(-GEO_BOUNDS, Math.min(GEO_BOUNDS, cam.position.z))
+          // FIX: player follows dune terrain
+          cam.position.y = duneHeight(cam.position.x, cam.position.z) + PLAYER_EYE
+        } else {
+          // FIX: clamp XZ radius only (old code scaled Y too via setLength)
+          const dxz = Math.hypot(cam.position.x, cam.position.z)
+          if (dxz > KAMINO_PLAY_R) {
+            cam.position.x = (cam.position.x / dxz) * KAMINO_PLAY_R
+            cam.position.z = (cam.position.z / dxz) * KAMINO_PLAY_R
+          }
+          cam.position.y = PLAYER_EYE
+        }
+      }
+    }
+  }
+
+  // ================= bots =================
+  updateBots(dt, t) {
+    if (!this.camera || !this.map) return
+    const camPos = this.camera.position
+
+    for (const bot of this.bots) {
+      // pick nearest enemy (droids prefer the player when close)
+      let targetPos = null
+      let targetBot = null
+      let bestD = Infinity
+      if (!bot.isClone && !this.dead) {
+        const d = bot.mesh.position.distanceTo(camPos)
+        if (d < 65) { targetPos = camPos; bestD = d }
+      }
+      for (const other of this.bots) {
+        if (other === bot || other.isClone === bot.isClone) continue
+        const d = bot.mesh.position.distanceTo(other.mesh.position)
+        if (d < bestD) { bestD = d; targetPos = other.mesh.position; targetBot = other }
+      }
+
+      if (targetPos) {
+        const m = bot.mesh
+        m.lookAt(targetPos.x, m.position.y, targetPos.z)
+
+        // movement: approach / retreat / strafe
+        const toTarget = new THREE.Vector3().subVectors(targetPos, m.position).setY(0).normalize()
+        const side = new THREE.Vector3(-toTarget.z, 0, toTarget.x).multiplyScalar(bot.strafeDir)
+        const move = new THREE.Vector3()
+        if (bestD > 22) move.addScaledVector(toTarget, 1)
+        else if (bestD < 10) move.addScaledVector(toTarget, -0.7)
+        move.addScaledVector(side, 0.6)
+        const moving = move.lengthSq() > 0.0001
+        if (moving) {
+          move.normalize()
+          m.position.addScaledVector(move, BOT_SPEED * dt)
+        }
+        // limb walk animation
+        if (bot.legL && bot.legR) {
+          if (moving) {
+            bot.walkPhase += dt * 9
+            const sw = Math.sin(bot.walkPhase) * 0.55
+            bot.legL.rotation.x = sw
+            bot.legR.rotation.x = -sw
+            if (bot.armL) bot.armL.rotation.x = -sw * 0.6
+          } else {
+            bot.legL.rotation.x *= 0.82
+            bot.legR.rotation.x *= 0.82
+            if (bot.armL) bot.armL.rotation.x *= 0.82
+          }
+        }
+
+        if (t > bot.nextThink) {
+          bot.nextThink = t + 1500 + Math.random() * 1500
+          bot.strafeDir = Math.random() > 0.5 ? 1 : -1
+        }
+
+        // shooting with line-of-sight check (no more shooting through rocks)
+        const cd = bot.isClone ? 1900 : 1600
+        if (bestD < 70 && t - bot.lastShot > cd + Math.random() * 1200) {
+          const from = m.position.clone().setY(this.map === 'kamino' && !bot.isClone ? 1.4 : 1.1)
+          const aim = targetPos.clone().setY(targetPos.y + 0.2)
+          if (!this.lineBlocked(from, aim)) {
+            const sDir = aim.sub(from).normalize()
+            // inaccuracy so the fight is survivable
+            sDir.x += (Math.random() - 0.5) * 0.08
+            sDir.y += (Math.random() - 0.5) * 0.05
+            sDir.z += (Math.random() - 0.5) * 0.08
+            const vsPlayer = !targetBot && !this.dead
+            const dmg = bot.isClone ? 50 : (vsPlayer ? (this.map === 'kamino' ? 14 : 9) : 50)
+            this.spawnLaser(from, sDir.normalize(), bot.isClone ? 'clone' : 'droid', dmg)
+            bot.lastShot = t
+          } else {
+            bot.lastShot = t - 400 // retry soon when LOS clears
+          }
+        }
+      }
+
+      // terrain / platform constraints
+      if (this.map === 'geonosis') {
+        bot.mesh.position.y = duneHeight(bot.mesh.position.x, bot.mesh.position.z)
+        bot.mesh.position.x = Math.max(-GEO_BOUNDS, Math.min(GEO_BOUNDS, bot.mesh.position.x))
+        bot.mesh.position.z = Math.max(-GEO_BOUNDS, Math.min(GEO_BOUNDS, bot.mesh.position.z))
+      } else {
+        // FIX: bots no longer walk off the platform into the ocean
+        const dxz = Math.hypot(bot.mesh.position.x, bot.mesh.position.z)
+        if (dxz > 70) {
+          bot.mesh.position.x = (bot.mesh.position.x / dxz) * 70
+          bot.mesh.position.z = (bot.mesh.position.z / dxz) * 70
+        }
+        bot.mesh.position.y = 0
+      }
+
+      // rock collision push-out
+      for (const o of this.obstacles) {
+        const dx = bot.mesh.position.x - o.x
+        const dz = bot.mesh.position.z - o.z
+        const d = Math.hypot(dx, dz)
+        const minD = o.r * 0.85 + 0.5
+        if (d < minD && d > 0.0001) {
+          bot.mesh.position.x = o.x + (dx / d) * minD
+          bot.mesh.position.z = o.z + (dz / d) * minD
+        }
+      }
+    }
+
+    // gentle bot-vs-bot separation
+    for (let i = 0; i < this.bots.length; i++) {
+      for (let j = i + 1; j < this.bots.length; j++) {
+        const a = this.bots[i].mesh.position
+        const b = this.bots[j].mesh.position
+        const dx = b.x - a.x
+        const dz = b.z - a.z
+        const d = Math.hypot(dx, dz)
+        if (d < 1.4 && d > 0.0001) {
+          const push = (1.4 - d) / 2
+          a.x -= (dx / d) * push
+          a.z -= (dz / d) * push
+          b.x += (dx / d) * push
+          b.z += (dz / d) * push
+        }
+      }
+    }
+  }
+
+  // ================= lasers & hits =================
+  updateLasers(t) {
+    if (!this.camera) return
+    const camPos = this.camera.position
+
+    for (let i = this.lasers.length - 1; i >= 0; i--) {
+      const l = this.lasers[i]
+      l.prev.copy(l.mesh.position)
+      l.mesh.position.addScaledVector(l.dir, LASER_SPEED * (1 / 60))
+      const cur = l.mesh.position
+      let removed = false
+
+      // hit obstacles (rocks / domes / barriers)
+      for (const o of this.obstacles) {
+        if (l.prev.y < o.h && cur.y < o.h) {
+          if (segPointDist2(l.prev.x, l.prev.z, cur.x, cur.z, o.x, o.z) < rockRadiusAt(o, Math.min(l.prev.y, o.h))) {
+            removed = true
+            break
+          }
+        }
+      }
+
+      // hit player (droid lasers only) — segment check prevents tunneling
+      if (!removed && l.owner === 'droid' && !this.dead) {
+        if (segPointDist3(l.prev, cur, camPos) < PLAYER_HIT_R) {
+          this.damagePlayer(l.dmg, t)
+          removed = true
+        }
+      }
+
+      // hit bots — segment vs sphere
+      if (!removed) {
+        for (let j = this.bots.length - 1; j >= 0; j--) {
+          const bot = this.bots[j]
+          if (l.owner === 'player' && bot.isClone) continue
+          if (l.owner === 'clone' && bot.isClone) continue
+          if (l.owner === 'droid' && !bot.isClone) continue
+          const center = bot.mesh.position.clone()
+          center.y += bot.isClone ? 0.8 : 0.75
+          if (segPointDist3(l.prev, cur, center) < BOT_HIT_R) {
+            bot.health -= l.dmg
+            removed = true
+            if (l.owner === 'player') {
+              this.cb.onHitMarker()
+              this.sfx.hit()
+            }
+            if (bot.health <= 0) {
+              // FIX: kill credit — only the actual laser owner scores
+              if (l.owner === 'player') {
+                this.frags++
+                this.sfx.kill()
+              } else if (l.owner === 'clone') this.clonesScore++
+              else this.droidsScore++
+              this.pushHud(true)
+              this.bots.splice(j, 1)
+              // death animation: topple over, then clean up
+              this.dying.push({
+                mesh: bot.mesh,
+                until: t + 900,
+                y0: bot.mesh.position.y,
+                dir: Math.random() > 0.5 ? 1 : -1,
+              })
+              this.spawnBot(bot.isClone) // respawn keeps the battle going
+            }
+            break
+          }
+        }
+      }
+
+      if (removed || t - l.born > LASER_LIFETIME_MS) {
+        this.scene && this.scene.remove(l.mesh)
+        l.mesh.geometry.dispose()
+        l.mesh.material.dispose()
+        this.lasers.splice(i, 1)
+      }
+    }
+  }
+
+  // ================= dying bots =================
+  updateDying(t) {
+    for (let i = this.dying.length - 1; i >= 0; i--) {
+      const d = this.dying[i]
+      const k = 1 - Math.max(0, (d.until - t) / 900)
+      const fall = Math.min(1, k * 1.4)
+      d.mesh.rotation.x = d.dir * fall * (Math.PI / 2) * 0.94
+      d.mesh.position.y = d.y0 - fall * 0.3
+      if (t >= d.until) {
+        this.scene && this.scene.remove(d.mesh)
+        d.mesh.traverse((obj) => {
+          const mm = obj
+          if (mm.geometry) mm.geometry.dispose()
+          const mat = mm.material
+          if (Array.isArray(mat)) mat.forEach((m) => m.dispose())
+          else if (mat) mat.dispose()
+        })
+        this.dying.splice(i, 1)
+      }
+    }
+  }
+
+  // ================= hud =================
+  pushHud(force) {
+    const key = this.ammo + '|' + this.reloading + '|' + Math.round(this.hp) + '|' + this.frags + '|' + this.clonesScore + '|' + this.droidsScore
+    if (!force && key === this.hudCache) return
+    this.hudCache = key
+    this.cb.onHud({
+      ammo: this.ammo,
+      reloading: this.reloading,
+      hp: Math.round(this.hp),
+      frags: this.frags,
+      clonesScore: this.clonesScore,
+      droidsScore: this.droidsScore,
+    })
+  }
+
+  // ================= main loop =================
+  tick = () => {
+    if (this.disposed) return
+    this.rafId = requestAnimationFrame(this.tick)
+    const dt = Math.min(this.clock.getDelta(), 0.05)
+    if (!this.map || !this.scene || !this.camera || this.paused) return
+    const t = performance.now()
+    this.updatePlayer(dt, t)
+    this.updateBots(dt, t)
+    this.updateLasers(t)
+    this.updateDying(t)
+    this.renderer.render(this.scene, this.camera)
+  }
+}
+
+// ============================================================
+//  UI wiring (vanilla JS, mirrors the React app)
+// ============================================================
+const $ = (id) => document.getElementById(id)
+
+const ui = {
+  host: $('canvas-host'),
+  crosshair: $('crosshair'),
+  vignette: $('vignette'),
+  hud: $('hud'),
+  ammoLine: $('ammo-line'),
+  ammoVal: $('ammo-val'),
+  hpFill: $('hp-fill'),
+  hpNum: $('hp-num'),
+  fragsNum: $('frags-num'),
+  armyScore: $('army-score'),
+  menu: $('menu'),
+  pause: $('pause'),
+  death: $('death'),
+  deathFrags: $('death-frags'),
+  deathScore: $('death-score'),
+}
+
+let hudState = { frags: 0, clonesScore: 0, droidsScore: 0 }
+let inGame = false
+let isDead = false
+let hitTimer = 0
+let dmgTimer = 0
+
+function showGameView() {
+  ui.hud.classList.remove('hidden')
+  ui.crosshair.classList.remove('hidden')
+}
+
+function hideGameView() {
+  ui.hud.classList.add('hidden')
+  ui.crosshair.classList.add('hidden')
+  ui.vignette.classList.add('hidden')
+}
+
+function goMenu() {
+  inGame = false
+  isDead = false
+  ui.menu.classList.remove('hidden')
+  ui.pause.classList.add('hidden')
+  ui.death.classList.add('hidden')
+  hideGameView()
+}
+
+function startGame(map) {
+  inGame = true
+  isDead = false
+  ui.menu.classList.add('hidden')
+  ui.pause.classList.add('hidden')
+  ui.death.classList.add('hidden')
+  showGameView()
+  engine.start(map)
+}
+
+const engine = new BattlefrontEngine(ui.host, {
+  onHud(s) {
+    hudState = s
+    if (s.reloading) {
+      ui.ammoLine.classList.add('reloading')
+      ui.ammoVal.textContent = 'ПЕРЕЗАРЯДКА…'
+    } else {
+      ui.ammoLine.classList.remove('reloading')
+      ui.ammoVal.textContent = s.ammo + '/∞'
+    }
+    const hp = Math.max(0, Math.min(100, s.hp))
+    ui.hpFill.style.width = hp + '%'
+    ui.hpFill.style.background = hp > 50 ? '#34d399' : hp > 25 ? '#fbbf24' : '#ef4444'
+    ui.hpNum.textContent = hp
+    ui.fragsNum.textContent = s.frags
+    ui.armyScore.textContent = 'Клоны ' + s.clonesScore + ' : ' + s.droidsScore + ' Дроиды'
+  },
+  onHitMarker() {
+    ui.crosshair.classList.add('hit')
+    clearTimeout(hitTimer)
+    hitTimer = setTimeout(() => ui.crosshair.classList.remove('hit'), 160)
+  },
+  onDamage() {
+    ui.vignette.classList.remove('hidden')
+    clearTimeout(dmgTimer)
+    dmgTimer = setTimeout(() => ui.vignette.classList.add('hidden'), 240)
+  },
+  onDeath() {
+    isDead = true
+    hideGameView()
+    ui.deathFrags.textContent = 'Ваши фраги: ' + hudState.frags
+    ui.deathScore.textContent = 'Счёт армии — Клоны ' + hudState.clonesScore + ' : ' + hudState.droidsScore + ' Дроиды'
+    ui.death.classList.remove('hidden')
+  },
+  onPointerLockLost() {
+    if (!inGame || isDead) return
+    hideGameView()
+    ui.pause.classList.remove('hidden')
+  },
+})
+
+// menu buttons
+document.querySelectorAll('.map-btn').forEach((btn) => {
+  btn.addEventListener('click', () => startGame(btn.dataset.map))
+})
+
+// pause overlay
+$('btn-resume').addEventListener('click', () => {
+  ui.pause.classList.add('hidden')
+  showGameView()
+  engine.resume()
+})
+$('btn-menu-pause').addEventListener('click', () => {
+  engine.exitToMenu()
+  goMenu()
+})
+
+// death overlay
+$('btn-respawn').addEventListener('click', () => {
+  isDead = false
+  ui.death.classList.add('hidden')
+  showGameView()
+  engine.respawn()
+})
+$('btn-menu-death').addEventListener('click', () => {
+  engine.exitToMenu()
+  goMenu()
+})
+</script>
+</body>
+</html>
